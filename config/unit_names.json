@@ -1,0 +1,213 @@
+{
+  "version": 1,
+  "units": {
+    "unit_scout_1_lan": {
+      "custom_name": "",
+      "notes": ""
+    },
+    "gaia_herdable_sheep_black": {
+      "custom_name": "羊",
+      "notes": ""
+    },
+    "gaia_huntable_deer": {
+      "custom_name": "鹿",
+      "notes": ""
+    },
+    "gaia_deer_dummy_minimap_icon": {
+      "custom_name": "",
+      "notes": ""
+    },
+    "gaia_herdable_sheep_brown": {
+      "custom_name": "羊",
+      "notes": ""
+    },
+    "gaia_huntable_boar": {
+      "custom_name": "野猪",
+      "notes": ""
+    },
+    "gaia_boar_dummy_minimap_icon": {
+      "custom_name": "",
+      "notes": ""
+    },
+    "gaia_herdable_sheep": {
+      "custom_name": "羊",
+      "notes": ""
+    },
+    "gaia_huntable_wolf": {
+      "custom_name": "狼",
+      "notes": ""
+    },
+    "building_town_center_capital_mon_ha_gol": {
+      "custom_name": "",
+      "notes": ""
+    },
+    "unit_scout_1_mon_ha_gol": {
+      "custom_name": "",
+      "notes": ""
+    },
+    "unit_villager_1_mon_ha_gol": {
+      "custom_name": "",
+      "notes": ""
+    },
+    "building_town_center_capital_sul": {
+      "custom_name": "",
+      "notes": ""
+    },
+    "unit_scout_1_sul": {
+      "custom_name": "",
+      "notes": ""
+    },
+    "unit_villager_1_sul": {
+      "custom_name": "",
+      "notes": ""
+    },
+    "gaia_food_sheep_black_corpse": {
+      "custom_name": "羊尸体",
+      "notes": ""
+    },
+    "gaia_food_sheep_corpse": {
+      "custom_name": "羊尸体",
+      "notes": ""
+    },
+    "gaia_food_sheep_brown_corpse": {
+      "custom_name": "羊尸体",
+      "notes": ""
+    },
+    "building_econ_food_control_sul": {
+      "custom_name": "磨坊",
+      "notes": ""
+    },
+    "building_unit_religious_control_sul": {
+      "custom_name": "修道院",
+      "notes": ""
+    },
+    "building_house_control_sul": {
+      "custom_name": "",
+      "notes": ""
+    },
+    "unit_monk_2_sul": {
+      "custom_name": "僧侣",
+      "notes": ""
+    },
+    "building_house_mon_ha_gol": {
+      "custom_name": "",
+      "notes": ""
+    },
+    "building_stone_deposit_ovoo_mon_ha_gol": {
+      "custom_name": "小敖包",
+      "notes": ""
+    },
+    "building_landmark_golden_tent_mon_ha_gol": {
+      "custom_name": "黄金帐篷",
+      "notes": ""
+    },
+    "building_cart_mon_ha_gol": {
+      "custom_name": "建筑车",
+      "notes": ""
+    },
+    "building_tech_unit_infantry_mon_ha_gol": {
+      "custom_name": "铁匠铺",
+      "notes": ""
+    },
+    "building_unit_ranged_mon_ha_gol": {
+      "custom_name": "靶场",
+      "notes": ""
+    },
+    "building_econ_wood_control_sul": {
+      "custom_name": "伐木场",
+      "notes": ""
+    },
+    "building_econ_mining_camp_control_sul": {
+      "custom_name": "",
+      "notes": ""
+    },
+    "building_resource_farm_control_sul": {
+      "custom_name": "农田",
+      "notes": ""
+    },
+    "building_landmark_age1_quwwat_ul_islam_control_sul": {
+      "custom_name": "信仰穹顶建筑",
+      "notes": ""
+    },
+    "building_unit_infantry_control_sul": {
+      "custom_name": "兵营",
+      "notes": ""
+    },
+    "unit_spearman_1_sul": {
+      "custom_name": "1级长矛兵",
+      "notes": ""
+    },
+    "building_resource_pasture_mon_ha_gol": {
+      "custom_name": "牲畜围栏",
+      "notes": ""
+    },
+    "unit_spearman_2_sul": {
+      "custom_name": "2级长矛兵",
+      "notes": ""
+    },
+    "building_landmark_age2_khiji_mosque_control_sul": {
+      "custom_name": "学苑",
+      "notes": ""
+    },
+    "building_stone_deposit_ovoo_large_mon_ha_gol": {
+      "custom_name": "大敖包",
+      "notes": ""
+    },
+    "unit_manatarms_3_sul": {
+      "custom_name": "武士",
+      "notes": ""
+    },
+    "gaia_food_deer_corpse": {
+      "custom_name": "鹿尸体",
+      "notes": ""
+    },
+    "unit_kipchak_3_mon_ha_gol": {
+      "custom_name": "钦察弓兵",
+      "notes": ""
+    },
+    "gaia_food_boar_corpse": {
+      "custom_name": "野猪尸体",
+      "notes": ""
+    },
+    "building_landmark_age3_madrasa_e_firoz_sul": {
+      "custom_name": "希萨尔学苑",
+      "notes": ""
+    },
+    "unit_spearman_3_sul": {
+      "custom_name": "3级长矛兵",
+      "notes": ""
+    },
+    "building_fortified_outpost_mon_ha_gol": {
+      "custom_name": "设防哨站",
+      "notes": ""
+    },
+    "unit_rus_tribute_3_mon_ha_gol": {
+      "custom_name": "罗斯贡品",
+      "notes": ""
+    },
+    "building_defense_keep_control_sul": {
+      "custom_name": "城堡",
+      "notes": ""
+    },
+    "unit_kipchak_4_mon_ha_gol": {
+      "custom_name": "精锐钦察弓兵",
+      "notes": ""
+    },
+    "building_tech_unit_infantry_control_sul": {
+      "custom_name": "铁匠铺",
+      "notes": ""
+    },
+    "unit_khan_4_mon_ha_gol": {
+      "custom_name": "可汗",
+      "notes": ""
+    },
+    "building_unit_religious_mon_ha_gol": {
+      "custom_name": "修道院",
+      "notes": ""
+    },
+    "building_defense_outpost_control_sul": {
+      "custom_name": "",
+      "notes": ""
+    }
+  }
+}
