@@ -11,6 +11,9 @@ from windowing import U,dpi_aware,game_window,client_rect,clickthrough,place
 from layout import arrange
 from unit_names import NameStore,default_name
 from name_editor import NameEditor
+from assistance import IdleReminder,exclude_local
+from live_assistance import snapshot as assistance_snapshot
+from telemetry import PlayerTelemetry,PopulationWarning,MilitaryWarning,panels,number
 
 HOME=Path(sys.executable).parent if getattr(sys,'frozen',False) else Path(__file__).resolve().parent
 DATA=HOME/'config'
@@ -41,7 +44,7 @@ class Sampler:
     def snapshot(self):
         with self.lock:return self.latest,self.status
     def run(self):
-        reader=None;last_sample=0;last_camera=0;cam=None;entities=[];entity_stamp=0;last_neutral=None;errors=0;failures=0;next_attach=0;last_error='';last_error_log=0
+        reader=None;last_sample=0;last_camera=0;cam=None;entities=[];entity_stamp=0;last_neutral=None;errors=0;failures=0;next_attach=0;last_error='';last_error_log=0;aux={}
         try:
             while not self.stop_event.is_set():
                 tick=time.perf_counter()
@@ -55,6 +58,7 @@ class Sampler:
                         log.info('Attached pid=%s module_base=%#x',reader.p.pid,reader.base)
                     if tick-last_sample>=cfg['interval']/1000 or cfg['neutral']!=last_neutral:
                         start=time.perf_counter();entities,errors=reader.entities(cfg['neutral'])
+                        aux=assistance_snapshot(reader,entities)
                         cost=(time.perf_counter()-start)*1000;self.times.append(cost)
                         last_sample=tick;entity_stamp=time.perf_counter();last_neutral=cfg['neutral']
                     if cam is None or tick-last_camera>=1/30:
@@ -63,7 +67,9 @@ class Sampler:
                     packet={'pid':reader.p.pid,'entities':entities,'camera':cam,'time':time.perf_counter(),
                         'entity_time':entity_stamp,'count':reader.raw_count,'errors':errors+reader.errors,
                         'ms':self.times[-1] if self.times else 0,'median':statistics.median(self.times) if self.times else 0,
-                        'interval':cfg['interval'],'read_calls':reader.p.read_calls}
+                        'interval':cfg['interval'],'read_calls':reader.p.read_calls,
+                        **aux,
+                        'match_key':(reader.p.pid,reader.arena,reader.world)}
                     if self.stop_event.is_set():break
                     with self.lock:self.latest=packet;self.status='已连接 · 真实内存数据'
                 except Exception as e:
@@ -92,7 +98,8 @@ class Overlay:
         self.hwnd=clickthrough(self.win);self.shown=False;self.items={};self.rect=None;self.last_font=None
     def hide(self):
         if self.shown:self.win.withdraw();self.shown=False
-    def draw(self,rect,labels,font_size):
+    def draw(self,rect,labels,font_size,tip='',side_panels=()):
+        self.canvas.delete('assist_tip')
         if not self.shown:
             self.win.geometry(f'{rect[2]}x{rect[3]}+0+0');self.win.deiconify();self.hwnd=clickthrough(self.win);self.shown=True
             place(self.hwnd,rect);self.rect=rect
@@ -118,18 +125,51 @@ class Overlay:
                 self.items[uid]=(line,dot,shadow,main,text,color)
         for uid in self.items.keys()-live:
             for item in self.items.pop(uid)[:4]:self.canvas.delete(item)
+        self.draw_panels(rect,side_panels)
+        if tip:
+            w=rect[2];self.canvas.create_rectangle(w/2-310,26,w/2+310,96,fill='#352a17',outline='#eab85d',tags='assist_tip')
+            self.canvas.create_text(w/2,61,text=tip,fill='#fff1cb',font=('Microsoft YaHei UI',14,'bold'),width=590,tags='assist_tip')
         self.last_font=font_size
+
+    def draw_panels(self,rect,groups):
+        signature=(rect[2],rect[3],groups)
+        if signature==getattr(self,'panel_signature',None):
+            self.canvas.tag_raise('telemetry');return
+        self.panel_signature=signature;self.canvas.delete('telemetry')
+        if not groups:return
+        width=min(480,rect[2]-24);x=rect[2]-width-12;y=12
+        lines=sum(2+sum(text.count('\n')+1 for text,_ in rows) for _,rows in groups)
+        row_height=max(10,min(19,(rect[3]-50)//max(1,lines)))
+        font=('Microsoft YaHei UI',-max(8,row_height-4))
+        for title,rows in groups:
+            height=(2+sum(text.count('\n')+1 for text,_ in rows))*row_height
+            self.canvas.create_rectangle(x,y,rect[2]-12,y+height,fill='#131e2b',outline='#354b63',tags='telemetry')
+            self.canvas.create_text(x+8,y+5,text=title,fill='#eef5ff',anchor='nw',font=font,tags='telemetry')
+            yy=y+row_height*2
+            for text,color in rows:
+                self.canvas.create_text(x+8,yy,text=text,fill=color,anchor='nw',font=font,tags='telemetry')
+                yy+=(text.count('\n')+1)*row_height
+            y+=height+8
 
 class App:
     def __init__(self):
-        dpi_aware();self.root=tk.Tk();self.root.title('AoE IV · 本机对局分析');self.root.geometry('1100x760')
-        self.root.minsize(900,640);self.root.configure(bg='#101722');self.root.protocol('WM_DELETE_WINDOW',self.close)
+        dpi_aware();self.root=tk.Tk();self.root.title('AoE IV · 本机对局分析');self.root.geometry('1100x900')
+        self.root.minsize(950,800);self.root.configure(bg='#101722');self.root.protocol('WM_DELETE_WINDOW',self.close)
         self.sampler=Sampler();self.overlay=Overlay(self.root);self.target=None;self.target_pid=None
         self.names=NameStore(DATA/'unit_names.json');self.name_editor=None;self.last_name_save=0
         self.last_table=0;self.last_window=0;self.packet=None;self.closing=False;self.visible=0
         self.interval=tk.StringVar(value='100');self.font_size=tk.StringVar(value='14');self.neutral=tk.BooleanVar(value=False)
         self.enabled=tk.BooleanVar(value=True);self.buildings=tk.BooleanVar(value=True);self.labelstyle=tk.StringVar(value='自定义 / 默认名称')
         self.player=tk.StringVar(value='全部玩家');self.status=tk.StringVar(value='尚未连接');self.note=tk.StringVar(value='')
+        self.hide_self=tk.BooleanVar(value=False);self.idle_alert=tk.BooleanVar(value=False)
+        self.auto_villager=tk.BooleanVar(value=False);self.assist_player=tk.StringVar(value='本机玩家')
+        self.local_status=tk.StringVar(value='本机玩家：待识别');self.assist_status=tk.StringVar(value='等待对局数据；生产队列适配尚未验证')
+        self.reminder=IdleReminder();self.tip='';self.tip_until=0;self.assist_context=None
+        self.extra_flags={k:tk.BooleanVar(value=False) for k in ('evacuate','population','scores','military','intelligence')}
+        self.extra_status=tk.StringVar(value='新增辅助等待数据适配；撤离不会发送指令')
+        self.population_warning=PopulationWarning();self.military_warning=MilitaryWarning()
+        self.extra_tip='';self.extra_tip_until=0;self.extra_messages=deque(maxlen=16);self.extra_context=None
+        self.side_panels=[];self.last_telemetry=0
         self.stats={k:tk.StringVar(value='—') for k in ['units','raw','read','visible']}
         self.load_settings();self.make_ui();self.root.after(30,self.tick)
         self.root.after(250,self.start)
@@ -138,6 +178,9 @@ class App:
             d=json.loads((DATA/'settings.json').read_text(encoding='utf-8'))
             self.interval.set(str(max(20,min(2000,int(d.get('interval',100))))));self.font_size.set(str(max(10,min(28,int(d.get('font',14))))))
             self.neutral.set(bool(d.get('neutral',False)));self.buildings.set(bool(d.get('buildings',True)))
+            self.hide_self.set(d.get('hide_self') is True);self.idle_alert.set(d.get('idle_alert') is True)
+            for key,var in self.extra_flags.items():
+                if key!='evacuate':var.set(d.get('assist_'+key) is True)
         except (OSError,ValueError,TypeError):pass
     def make_ui(self):
         style=ttk.Style();style.theme_use('clam')
@@ -179,6 +222,20 @@ class App:
         ttk.Checkbutton(opts2,text='包括中立实体',variable=self.neutral,command=self.apply).pack(side='left',padx=16)
         ttk.Combobox(opts2,textvariable=self.labelstyle,values=['自定义 / 默认名称','完整蓝图名称'],state='readonly',width=17).pack(side='left',padx=(0,12))
         self.player_combo=ttk.Combobox(opts2,textvariable=self.player,values=['全部玩家'],state='readonly',width=12);self.player_combo.pack(side='left')
+        ttk.Checkbutton(opts2,text='屏蔽自己',variable=self.hide_self,command=self.apply).pack(side='left',padx=12)
+        ttk.Label(outer,textvariable=self.local_status,style='Muted.TLabel').pack(anchor='w',pady=(0,8))
+        assist=ttk.Frame(outer,padding=10);assist.pack(fill='x',pady=(0,12))
+        ttk.Label(assist,text='游玩辅助',font=('Microsoft YaHei UI',13,'bold')).pack(anchor='w')
+        assist_row=ttk.Frame(assist);assist_row.pack(fill='x',pady=8)
+        ttk.Checkbutton(assist_row,text='断农提醒',variable=self.idle_alert,command=self.apply).pack(side='left')
+        ttk.Label(assist_row,text='提醒视角').pack(side='left',padx=(16,8))
+        self.assist_combo=ttk.Combobox(assist_row,textvariable=self.assist_player,values=['本机玩家'],state='readonly',width=14);self.assist_combo.pack(side='left')
+        self.auto_button=ttk.Checkbutton(assist_row,text='自动造农（执行器待适配）',variable=self.auto_villager,state='disabled');self.auto_button.pack(side='left',padx=20)
+        ttk.Label(assist,textvariable=self.assist_status,style='Muted.TLabel',wraplength=980).pack(anchor='w')
+        extra=ttk.Frame(assist);extra.pack(fill='x',pady=(8,4))
+        for index,(key,label) in enumerate([('evacuate','受袭撤离助手'),('population','爆人口提醒'),('scores','实时分数显示'),('military','军事数据间谍'),('intelligence','军情六处警示助手')]):
+            ttk.Checkbutton(extra,text=label+('（待适配）' if key=='evacuate' else ''),variable=self.extra_flags[key],command=self.extra_changed,state='disabled' if key=='evacuate' else 'normal').grid(row=index//3,column=index%3,sticky='w',padx=(0,20),pady=3)
+        ttk.Label(assist,textvariable=self.extra_status,style='Muted.TLabel',wraplength=980).pack(anchor='w')
         cards=ttk.Frame(outer);cards.pack(fill='x',pady=(0,18))
         for i,(key,label) in enumerate([('units','筛选后的实体'),('raw','世界实体总数'),('read','采样耗时 / 中位数'),('visible','当前视野内标签')]):
             box=ttk.Frame(cards,style='Card.TFrame',padding=(16,12));box.grid(row=0,column=i,sticky='nsew',padx=(0,10 if i<3 else 0));cards.columnconfigure(i,weight=1)
@@ -186,7 +243,7 @@ class App:
             tk.Label(box,textvariable=self.stats[key],bg='#192432',fg='#e2edf9',font=('Segoe UI',19,'bold')).pack(anchor='w',pady=(4,0))
         frame=ttk.Frame(outer);frame.pack(fill='both',expand=True)
         columns=('player','name','blueprint','position','id')
-        self.table=ttk.Treeview(frame,columns=columns,show='headings',selectmode='browse',height=8)
+        self.table=ttk.Treeview(frame,columns=columns,show='headings',selectmode='browse',height=5)
         for key,title,width in [('player','玩家',65),('name','名称',120),('blueprint','真实蓝图名称',355),('position','世界坐标 X / Y / Z',210),('id','实体 ID',115)]:
             self.table.heading(key,text=title);self.table.column(key,width=width,minwidth=50,stretch=key in ('blueprint','position'))
         scroll=ttk.Scrollbar(frame,orient='vertical',command=self.table.yview);self.table.configure(yscrollcommand=scroll.set)
@@ -203,6 +260,8 @@ class App:
             self.note.set('请输入 20–2000 ms 的采样间隔，以及 10–28 的标签字号。');return False
         self.sampler.configure(interval=interval,neutral=self.neutral.get());self.render_font=font
         d={'interval':interval,'font':font,'neutral':self.neutral.get(),'buildings':self.buildings.get()}
+        d.update(hide_self=self.hide_self.get(),idle_alert=self.idle_alert.get())
+        d.update({'assist_'+k:v.get() for k,v in self.extra_flags.items() if k!='evacuate'})
         try:
             tmp=DATA/'settings.tmp';tmp.write_text(json.dumps(d),encoding='utf-8');tmp.replace(DATA/'settings.json')
         except OSError as e:log.warning('Settings: %s',e)
@@ -226,7 +285,7 @@ class App:
             if values:self.edit_names(values[2])
     def filtered(self,entities):
         result=[];wanted=self.player.get()
-        for e in entities:
+        for e in exclude_local(entities,self.hide_self.get(),(self.packet or {}).get('local_player')):
             if not self.buildings.get() and e.blueprint.startswith('building_'):continue
             if wanted!='全部玩家' and wanted!=('中立' if e.player==0 else f'玩家 {e.player}'):continue
             result.append(e)
@@ -240,6 +299,58 @@ class App:
             else:self.table.insert('', 'end',iid=iid,values=values,tags=(tag,))
         for iid in set(self.table.get_children())-ids:self.table.delete(iid)
         if selection and self.table.exists(selection):self.table.selection_set(selection)
+    def update_assistance(self,packet,valid,now):
+        if not valid:
+            self.reminder.reset();self.tip='';self.assist_context=None;self.auto_villager.set(False)
+            self.local_status.set('本机玩家：待识别');self.assist_status.set('等待有效对局数据；生产队列适配尚未验证')
+            return
+        local=packet.get('local_player');match=packet.get('match_key');context=(match,self.assist_player.get(),self.idle_alert.get())
+        if context!=self.assist_context:self.tip='';self.assist_context=context
+        self.local_status.set(f'本机玩家：玩家 {local}' if local else '本机玩家：未识别；屏蔽自己暂不生效')
+        players=sorted({e.player for e in packet['entities'] if e.player})
+        options=['本机玩家']+[f'玩家 {n}' for n in players];self.assist_combo.configure(values=options)
+        if self.assist_player.get() not in options:self.assist_player.set('本机玩家')
+        selected=self.assist_player.get();player=local if selected=='本机玩家' else int(selected.split()[-1])
+        verified=packet.get('queue_verified',False)
+        alerts=self.reminder.update(match,player,packet.get('queues',[]),now,self.idle_alert.get() and verified)
+        if alerts:
+            self.tip=f'断农提醒 · 玩家 {player}\n{len(alerts)} 座城镇中心没有农民生产队列';self.tip_until=now+6
+        if now>=self.tip_until or not verified or not any(q.player==player and q.queue_verified and q.villager_count==0 for q in packet.get('queues',[])):self.tip=''
+        self.assist_status.set('生产队列尚未适配：断农提醒等待数据，自动造农不可用' if not verified else
+            ('请选择已识别的玩家' if player is None else f'提醒视角：玩家 {player} · 空队列持续 2 秒提醒，重复间隔 15 秒'))
+    def extra_changed(self):
+        self.last_telemetry=0;self.extra_tip='';self.extra_messages.clear();self.apply()
+    def update_extra(self,packet,valid,now):
+        flags={k:v.get() for k,v in self.extra_flags.items()}
+        if not valid:
+            self.side_panels=[];self.extra_tip='';self.extra_messages.clear()
+            self.extra_status.set('等待有效对局；分数、人口、军事统计与指令来源尚未适配')
+            return
+        match=packet.get('match_key')
+        if match!=self.extra_context:
+            self.extra_context=match;self.extra_tip='';self.extra_messages.clear();self.last_telemetry=0
+        if now-self.last_telemetry<.5:return
+        self.last_telemetry=now;players=packet.get('telemetry',[])
+        self.side_panels=panels(players,flags['scores'],flags['military'])
+        local=next((p for p in players if p.player==packet.get('local_player')),None)
+        if local and number(local.population_cap) and number(local.population_limit) and local.population_cap>=local.population_limit:
+            if self.extra_tip.startswith('人口提醒：'):self.extra_tip=''
+            self.extra_messages=deque((m for m in self.extra_messages if not m.startswith('人口提醒：')),maxlen=16)
+        population=self.population_warning.update(match,local,now,flags['population'])
+        if population:self.extra_messages.append(population)
+        self.extra_messages.extend(self.military_warning.update(match,players,flags['intelligence']))
+        if now>=self.extra_tip_until:
+            self.extra_tip=self.extra_messages.popleft() if self.extra_messages else ''
+            self.extra_tip_until=now+6
+        # Current reader supplies identity/colour only. These values are not inferred.
+        pending=[]
+        if flags['evacuate']:pending.append('撤离待接通（缺指令来源、威胁与避难验证）')
+        if flags['population']:pending.append('人口提醒：按现人口，剩余 ≤5；达到最终上限不提醒')
+        if flags['scores']:pending.append('分数：游戏状态数据')
+        if flags['military']:pending.append('军数：存活军事类型（含侦察兵）；军值：游戏 ArmyValue 资源和')
+        if flags['intelligence']:pending.append('军情：敌方军数超过 25/50/100 时提醒')
+        if packet.get('assistance_errors'):pending.append('部分辅助数据暂不可用：'+packet['assistance_errors'][0])
+        self.extra_status.set('；'.join(pending) if pending else '新增辅助已关闭')
     def tick(self):
         if self.closing:return
         try:
@@ -251,6 +362,8 @@ class App:
                 except (OSError,ValueError) as e:
                     self.names.error=str(e);log.warning('Name configuration: %s',e)
             valid=packet and now-packet['time']<.5 and now-packet['entity_time']<max(1,packet['interval']/1000*3)
+            self.update_assistance(packet,valid,now)
+            self.update_extra(packet,valid,now)
             if not valid:
                 self.overlay.hide();self.stats['visible'].set('0')
                 if self.table.get_children():self.table.delete(*self.table.get_children())
@@ -267,8 +380,8 @@ class App:
                             text=self.names.display(e.blueprint) if self.labelstyle.get()!='完整蓝图名称' else e.blueprint
                             labels.append((e.id,projected[0],projected[1],text,e.color))
                 self.visible=len(labels)
-                if rect and self.enabled.get() and U.GetForegroundWindow()==self.target and not U.IsIconic(self.target):
-                    self.overlay.draw(rect,labels,getattr(self,'render_font',14))
+                if rect and (self.enabled.get() or self.tip or self.extra_tip or self.side_panels) and U.GetForegroundWindow()==self.target and not U.IsIconic(self.target):
+                    self.overlay.draw(rect,labels if self.enabled.get() else [],getattr(self,'render_font',14),self.extra_tip or self.tip,self.side_panels)
                 else:self.overlay.hide()
                 if now-self.last_table>=.5:
                     self.names.observe(e.blueprint for e in packet['entities'])

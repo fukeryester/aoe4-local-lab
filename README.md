@@ -4,7 +4,13 @@ Windows 上的 AoE IV 本机单人对局分析工具：只读采集实体、玩�
 
 ## 快速安装
 
+新增辅助功能请下载 [v1.1.0-preview.1](https://github.com/fukeryester/aoe4-local-lab/releases/tag/v1.1.0-preview.1) 的 `AoE4LocalLab-v1.1.0-preview.1-portable.zip`，解压后运行 `AoE4LocalLab-preview.exe`。无需安装 Python。建议解压到新文件夹；升级已有安装时只替换程序和说明，不覆盖自己的 `config/`。
+
+预览版支持屏蔽自己、按玩家断农提醒、近满人口提醒、实时分数、军事统计和敌军数量阈值提醒。自动造农、受袭撤离只有离线决策逻辑，执行器尚未接通，界面禁用。提醒是工具覆盖层；人口预警按现人口判断。详细验证范围见 [辅助功能适配记录](docs/ASSISTANCE_WIP.md)。
+
 从本仓库 Releases 下载 `AoE4LocalLab-portable.zip`，解压到可写目录（例如 G 盘）。双击 `AoE4LocalLab.exe`。保留整个文件夹即可迁移配置，无需安装 Python。
+
+上述不带版本号的便携包为 v1.0.0，保留原有名称覆盖层功能，不含新增辅助功能。
 
 启动游戏并进入本机单人对局，使用窗口化或无边框模式。工具会检查游戏版本，切回游戏后显示标签。菜单或加载期间可能显示读取错误，进入有效对局后自动重连。
 
@@ -33,7 +39,7 @@ Windows x64，已验证 Python 3.12（包含 tkinter）。运行无需第三方�
 Copy-Item -Path .\config -Destination .\source\config -Recurse
 Set-Location .\source
 python app.py
-python -m unittest test_lab.py test_unit_names.py
+python -m unittest discover -p 'test_*.py'
 ```
 
 仅在 `source/config` 尚不存在时执行上述复制，避免覆盖已有配置。
@@ -46,6 +52,6 @@ python -m unittest test_lab.py test_unit_names.py
 游戏 EXE SHA-256：`4c99b868cbec98b2219e135908a31d03c64c7b71f2bbcf1469dab1d7c6df2c9f`。
 版本不匹配会拒绝读取。不要跳过校验后沿用旧偏移。
 
-已有本机单人对局的实体采集、颜色、投影与覆盖层验证；名称配置通过界面保存和重启读取验证。17 项自动测试通过。多人、其他版本、大规模后期、驻军及运输状态未全面验证。
+已有本机单人对局的实体采集、颜色、投影与覆盖层验证；名称配置通过界面保存和重启读取验证。45 项自动测试通过。新增辅助的数据及面板已在本机单人对局验证，但敌军 26/51/101 阈值和近满人口提醒尚未完成实机触发验证。多人、其他版本、大规模后期、驻军及运输状态未全面验证。
 
 上传不包含游戏文件、内存转储或本机日志。

@@ -10,3 +10,7 @@ dist/
 **/config/*.log*
 **/config/*.tmp
 source/config/
+
+preview/
+source/bindings.json
+/SHA256SUMS.txt

@@ -62,7 +62,7 @@ class Reader:
             with open(self.module['path'],'rb') as f:actual=hashlib.file_digest(f,'sha256').hexdigest()
             if actual!=BUILD_SHA256:raise RuntimeError('游戏版本与已验证配置不符，停止读取。需要重新适配。')
             self.base=self.module['base'];self.names={};self.members=[];self.last_members=0;self.last_arena=None
-            self.last_colors=0;self.players={};self.raw_count=0;self.errors=0
+            self.last_colors=0;self.players={};self.raw_count=0;self.errors=0;self.last_world=None
         except BaseException:self.p.close();raise
     def close(self):self.p.close()
     def decode(self,value):return self.arena+((value^KEY)&0xffffffff)
@@ -70,6 +70,7 @@ class Reader:
         self.arena=self.p.u64(self.base+0x85f0990)
         if self.arena!=self.last_arena:self.last_members=0;self.last_colors=0;self.last_arena=self.arena
         self.world=self.decode(self.p.u64(self.base+0x863e348))
+        if self.world!=self.last_world:self.last_members=0;self.last_colors=0;self.last_world=self.world
         players=self.decode(self.p.u64(self.world+0x140));n=bounded(self.p.u32(players+0x10),16,'玩家数')
         if n<1:raise RuntimeError('尚未进入可读取的对局')
         offsets=struct.unpack('<'+'I'*n,self.p.read(self.arena+self.p.u32(players+0xc),4*n))
