@@ -137,19 +137,23 @@ class Overlay:
             self.canvas.tag_raise('telemetry');return
         self.panel_signature=signature;self.canvas.delete('telemetry')
         if not groups:return
-        width=min(480,rect[2]-24);x=rect[2]-width-12;y=12
-        lines=sum(2+sum(text.count('\n')+1 for text,_ in rows) for _,rows in groups)
-        row_height=max(10,min(19,(rect[3]-50)//max(1,lines)))
-        font=('Microsoft YaHei UI',-max(8,row_height-4))
         for title,rows in groups:
-            height=(2+sum(text.count('\n')+1 for text,_ in rows))*row_height
-            self.canvas.create_rectangle(x,y,rect[2]-12,y+height,fill='#131e2b',outline='#354b63',tags='telemetry')
-            self.canvas.create_text(x+8,y+5,text=title,fill='#eef5ff',anchor='nw',font=font,tags='telemetry')
-            yy=y+row_height*2
+            right=title=='军事数据'
+            x=rect[2]-12 if right else 12
+            # Leave the top corners to the game HUD and chat.
+            y=min(max(100,int(rect[3]*(.24 if right else .20))),max(0,rect[3]-100))
+            lines=1+sum(text.count('\n')+1 for text,_ in rows)
+            row_height=max(9,min(13,(rect[3]-y-12)//max(1,lines)))
+            font=('Microsoft YaHei UI',-max(8,row_height-2))
+            anchor='ne' if right else 'nw'
+            def text_item(text,color,yy):
+                self.canvas.create_text(x+1,yy+1,text=text,fill='#060b12',anchor=anchor,justify='right' if right else 'left',font=font,tags='telemetry')
+                self.canvas.create_text(x,yy,text=text,fill=color,anchor=anchor,justify='right' if right else 'left',font=font,tags='telemetry')
+            text_item(title,'#eef5ff',y)
+            yy=y+row_height
             for text,color in rows:
-                self.canvas.create_text(x+8,yy,text=text,fill=color,anchor='nw',font=font,tags='telemetry')
+                text_item(text,color,yy)
                 yy+=(text.count('\n')+1)*row_height
-            y+=height+8
 
 class App:
     def __init__(self):

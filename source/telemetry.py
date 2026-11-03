@@ -36,15 +36,15 @@ def panels(players,scores=False,military=False):
     if military:
         rows=[]
         for p in ranked(players,lambda p:p.military_value):
-            rows.append((f'P{p.player}  价值 {fmt(p.military_value)}  现人口 {fmt(p.population)}\n军数 {fmt(p.military_units)}  军事人口 {fmt(p.military_population)}  占比 {military_share(p)}',p.color))
-        result.append(('军事数据间谍 · ArmyValue 资源和排序',rows or [('等待玩家数据','#aebed2')]))
+            rows.append((f'P{p.player}  军值 {fmt(p.military_value)}  人口 {fmt(p.population)}\n军数 {fmt(p.military_units)}  军占比 {military_share(p)}',p.color))
+        result.append(('军事数据',rows or [('等待玩家数据','#aebed2')]))
     if scores:
         rows=[]
         for p in ranked(players,lambda p:p.scores.get('总分')):
             fields=['军事','经济','社会','科技']+[k for k in p.scores if k not in ('总分','军事','经济','社会','科技')]
             detail='  '.join(f'{k} {fmt(p.scores.get(k))}' for k in fields)
             rows.append((f'P{p.player}  总分 {fmt(p.scores.get("总分"))}\n{detail}',p.color))
-        result.append(('实时分数 · 按总分排序',rows or [('等待玩家数据','#aebed2')]))
+        result.append(('实时分数',rows or [('等待玩家数据','#aebed2')]))
     return result
 
 class PopulationWarning:
