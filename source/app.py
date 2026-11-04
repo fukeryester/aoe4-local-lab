@@ -6,13 +6,18 @@ from pathlib import Path
 from logging.handlers import RotatingFileHandler
 import tkinter as tk
 from tkinter import ttk,filedialog,messagebox
+from tkinter import font as tkfont
 from reader import Reader,project,BUILD_SHA256
+from reader_12260 import Reader as Reader12260, BUILD_SHA256 as BUILD_SHA256_12260
+from memory import Process,game_pids
+import hashlib
 from windowing import U,dpi_aware,game_window,client_rect,clickthrough,place
 from layout import arrange
 from unit_names import NameStore,default_name
 from name_editor import NameEditor
 from assistance import IdleReminder,exclude_local
 from live_assistance import snapshot as assistance_snapshot
+from live_12260 import snapshot as assistance_snapshot_12260
 from telemetry import PlayerTelemetry,PopulationWarning,MilitaryWarning,panels,number
 
 HOME=Path(sys.executable).parent if getattr(sys,'frozen',False) else Path(__file__).resolve().parent
@@ -24,6 +29,23 @@ handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
 
 def short_name(blueprint):
     return default_name(blueprint)
+
+def open_reader():
+    ids=game_pids()
+    if len(ids)!=1:raise RuntimeError(f'需要唯一游戏进程，当前检测到 {len(ids)} 个')
+    p=Process(ids[0])
+    try:
+        module=next(m for m in p.modules() if m['name'].lower()=='reliccardinal.exe')
+        with open(module['path'],'rb') as f:actual=hashlib.file_digest(f,'sha256').hexdigest()
+    finally:p.close()
+    if actual==BUILD_SHA256:
+        reader=Reader(ids[0]);reader.version='17.0.12182.0';reader.verified=True
+    else:
+        reader=Reader12260(ids[0],expected_hash=actual)
+        reader.verified=actual==BUILD_SHA256_12260
+        reader.version='17.0.12260.0' if reader.verified else '未知版本（尝试 17.0.12260.0 配置，数据未经验证）'
+    reader.build_sha256=actual
+    return reader
 
 class Sampler:
     def __init__(self):
@@ -54,11 +76,11 @@ class Sampler:
                         if tick<next_attach:
                             self.stop_event.wait(.1);continue
                         with self.lock:self.status='正在校验游戏版本并连接…'
-                        reader=Reader();last_sample=0;last_camera=0;cam=None;last_neutral=None
+                        reader=open_reader();last_sample=0;last_camera=0;cam=None;last_neutral=None
                         log.info('Attached pid=%s module_base=%#x',reader.p.pid,reader.base)
                     if tick-last_sample>=cfg['interval']/1000 or cfg['neutral']!=last_neutral:
                         start=time.perf_counter();entities,errors=reader.entities(cfg['neutral'])
-                        aux=assistance_snapshot(reader,entities)
+                        aux=(assistance_snapshot_12260 if isinstance(reader,Reader12260) else assistance_snapshot)(reader,entities)
                         cost=(time.perf_counter()-start)*1000;self.times.append(cost)
                         last_sample=tick;entity_stamp=time.perf_counter();last_neutral=cfg['neutral']
                     if cam is None or tick-last_camera>=1/30:
@@ -67,13 +89,14 @@ class Sampler:
                     packet={'pid':reader.p.pid,'entities':entities,'camera':cam,'time':time.perf_counter(),
                         'entity_time':entity_stamp,'count':reader.raw_count,'errors':errors+reader.errors,
                         'ms':self.times[-1] if self.times else 0,'median':statistics.median(self.times) if self.times else 0,
-                        'interval':cfg['interval'],'read_calls':reader.p.read_calls,
+                        'interval':cfg['interval'],'read_calls':reader.p.read_calls,'version':reader.version,'build_sha256':reader.build_sha256,'verified':reader.verified,
                         **aux,
                         'match_key':(reader.p.pid,reader.arena,reader.world)}
                     if self.stop_event.is_set():break
-                    with self.lock:self.latest=packet;self.status='已连接 · 真实内存数据'
+                    with self.lock:self.latest=packet;self.status='已连接 · 真实内存数据' if reader.verified else '未知版本 · 使用旧配置尝试读取 · 数据未经验证'
                 except Exception as e:
                     failures+=1;msg=f'{type(e).__name__}: {e}'
+                    if reader and not reader.verified:msg='未知版本尝试读取失败（数据未经验证）：'+msg
                     if msg!=last_error or tick-last_error_log>5:log.warning(msg);last_error=msg;last_error_log=tick
                     with self.lock:self.latest=None;self.status=msg
                     if reader and failures>=3:reader.close();reader=None;next_attach=tick+2
@@ -98,7 +121,7 @@ class Overlay:
         self.hwnd=clickthrough(self.win);self.shown=False;self.items={};self.rect=None;self.last_font=None
     def hide(self):
         if self.shown:self.win.withdraw();self.shown=False
-    def draw(self,rect,labels,font_size,tip='',side_panels=()):
+    def draw(self,rect,labels,font_size,tip='',side_panels=(),score_font=11,military_font=11):
         self.canvas.delete('assist_tip')
         if not self.shown:
             self.win.geometry(f'{rect[2]}x{rect[3]}+0+0');self.win.deiconify();self.hwnd=clickthrough(self.win);self.shown=True
@@ -125,14 +148,14 @@ class Overlay:
                 self.items[uid]=(line,dot,shadow,main,text,color)
         for uid in self.items.keys()-live:
             for item in self.items.pop(uid)[:4]:self.canvas.delete(item)
-        self.draw_panels(rect,side_panels)
+        self.draw_panels(rect,side_panels,score_font,military_font)
         if tip:
             w=rect[2];self.canvas.create_rectangle(w/2-310,26,w/2+310,96,fill='#352a17',outline='#eab85d',tags='assist_tip')
             self.canvas.create_text(w/2,61,text=tip,fill='#fff1cb',font=('Microsoft YaHei UI',14,'bold'),width=590,tags='assist_tip')
         self.last_font=font_size
 
-    def draw_panels(self,rect,groups):
-        signature=(rect[2],rect[3],groups)
+    def draw_panels(self,rect,groups,score_font=11,military_font=11):
+        signature=(rect[2],rect[3],groups,score_font,military_font)
         if signature==getattr(self,'panel_signature',None):
             self.canvas.tag_raise('telemetry');return
         self.panel_signature=signature;self.canvas.delete('telemetry')
@@ -142,9 +165,8 @@ class Overlay:
             x=rect[2]-12 if right else 12
             # Leave the top corners to the game HUD and chat.
             y=min(max(100,int(rect[3]*(.24 if right else .20))),max(0,rect[3]-100))
-            lines=1+sum(text.count('\n')+1 for text,_ in rows)
-            row_height=max(9,min(13,(rect[3]-y-12)//max(1,lines)))
-            font=('Microsoft YaHei UI',-max(8,row_height-2))
+            font=('Microsoft YaHei UI',-(military_font if right else score_font))
+            row_height=tkfont.Font(root=self.win,font=font).metrics('linespace')+2
             anchor='ne' if right else 'nw'
             def text_item(text,color,yy):
                 self.canvas.create_text(x+1,yy+1,text=text,fill='#060b12',anchor=anchor,justify='right' if right else 'left',font=font,tags='telemetry')
@@ -163,6 +185,7 @@ class App:
         self.names=NameStore(DATA/'unit_names.json');self.name_editor=None;self.last_name_save=0
         self.last_table=0;self.last_window=0;self.packet=None;self.closing=False;self.visible=0
         self.interval=tk.StringVar(value='100');self.font_size=tk.StringVar(value='14');self.neutral=tk.BooleanVar(value=False)
+        self.score_font=tk.StringVar(value='11');self.military_font=tk.StringVar(value='11')
         self.enabled=tk.BooleanVar(value=True);self.buildings=tk.BooleanVar(value=True);self.labelstyle=tk.StringVar(value='自定义 / 默认名称')
         self.player=tk.StringVar(value='全部玩家');self.status=tk.StringVar(value='尚未连接');self.note=tk.StringVar(value='')
         self.hide_self=tk.BooleanVar(value=False);self.idle_alert=tk.BooleanVar(value=False)
@@ -181,6 +204,7 @@ class App:
         try:
             d=json.loads((DATA/'settings.json').read_text(encoding='utf-8'))
             self.interval.set(str(max(20,min(2000,int(d.get('interval',100))))));self.font_size.set(str(max(10,min(28,int(d.get('font',14))))))
+            self.score_font.set(str(max(8,min(28,int(d.get('score_font',11))))));self.military_font.set(str(max(8,min(28,int(d.get('military_font',11))))))
             self.neutral.set(bool(d.get('neutral',False)));self.buildings.set(bool(d.get('buildings',True)))
             self.hide_self.set(d.get('hide_self') is True);self.idle_alert.set(d.get('idle_alert') is True)
             for key,var in self.extra_flags.items():
@@ -219,6 +243,10 @@ class App:
         ttk.Label(opts,text='ms',style='Muted.TLabel').pack(side='left',padx=(0,16))
         ttk.Label(opts,text='标签字号').pack(side='left')
         ttk.Spinbox(opts,from_=10,to=28,width=4,textvariable=self.font_size).pack(side='left',padx=8)
+        ttk.Label(opts,text='分数字号').pack(side='left',padx=(6,0))
+        ttk.Spinbox(opts,from_=8,to=28,width=3,textvariable=self.score_font).pack(side='left',padx=6)
+        ttk.Label(opts,text='军事字号').pack(side='left',padx=(6,0))
+        ttk.Spinbox(opts,from_=8,to=28,width=3,textvariable=self.military_font).pack(side='left',padx=6)
         ttk.Button(opts,text='应用',command=self.apply).pack(side='left',padx=4)
         ttk.Checkbutton(opts,text='画面标签',variable=self.enabled).pack(side='left',padx=(16,0))
         opts2=ttk.Frame(outer);opts2.pack(fill='x',pady=(0,16))
@@ -258,12 +286,14 @@ class App:
         self.note.set('标签只在游戏处于前台时显示；切回此窗口可调整参数。名称可切换为真实蓝图名称。')
     def apply(self):
         try:
-            interval=int(self.interval.get());font=int(self.font_size.get())
-            if not 20<=interval<=2000 or not 10<=font<=28:raise ValueError()
+            interval=int(self.interval.get());font=int(self.font_size.get());score_font=int(self.score_font.get());military_font=int(self.military_font.get())
+            if not 20<=interval<=2000 or not 10<=font<=28 or not 8<=score_font<=28 or not 8<=military_font<=28:raise ValueError()
         except ValueError:
-            self.note.set('请输入 20–2000 ms 的采样间隔，以及 10–28 的标签字号。');return False
+            self.note.set('请输入 20–2000 ms 的采样间隔、10–28 的标签字号和 8–28 的面板字号。');return False
         self.sampler.configure(interval=interval,neutral=self.neutral.get());self.render_font=font
+        self.render_score_font=score_font;self.render_military_font=military_font
         d={'interval':interval,'font':font,'neutral':self.neutral.get(),'buildings':self.buildings.get()}
+        d.update(score_font=score_font,military_font=military_font)
         d.update(hide_self=self.hide_self.get(),idle_alert=self.idle_alert.get())
         d.update({'assist_'+k:v.get() for k,v in self.extra_flags.items() if k!='evacuate'})
         try:
@@ -385,7 +415,7 @@ class App:
                             labels.append((e.id,projected[0],projected[1],text,e.color))
                 self.visible=len(labels)
                 if rect and (self.enabled.get() or self.tip or self.extra_tip or self.side_panels) and U.GetForegroundWindow()==self.target and not U.IsIconic(self.target):
-                    self.overlay.draw(rect,labels if self.enabled.get() else [],getattr(self,'render_font',14),self.extra_tip or self.tip,self.side_panels)
+                    self.overlay.draw(rect,labels if self.enabled.get() else [],getattr(self,'render_font',14),self.extra_tip or self.tip,self.side_panels,getattr(self,'render_score_font',11),getattr(self,'render_military_font',11))
                 else:self.overlay.hide()
                 if now-self.last_table>=.5:
                     self.names.observe(e.blueprint for e in packet['entities'])
@@ -396,7 +426,7 @@ class App:
                     self.stats['units'].set(str(len(entities)));self.stats['raw'].set(str(packet['count']))
                     self.stats['read'].set(f"{packet['ms']:.1f} / {packet['median']:.1f} ms")
                     self.stats['visible'].set(str(len(labels)))
-                    self.status.set(f"已连接 · PID {packet['pid']} · 版本 17.0.12182.0 · 跳过异常实体 {packet['errors']}")
+                    self.status.set(f"已连接 · PID {packet['pid']} · 版本 {packet['version']} · 跳过异常实体 {packet['errors']}")
         except Exception as e:
             log.exception('UI refresh');self.status.set(f'显示错误: {e}');self.overlay.hide()
         self.root.after(33,self.tick)
@@ -411,7 +441,7 @@ class App:
                 with open(path,'w',encoding='utf-8-sig',newline='') as f:
                     writer=csv.DictWriter(f,fieldnames=['id','blueprint','display_name','player','color','position','address']);writer.writeheader();writer.writerows(rows)
             else:
-                result={'build_sha256':BUILD_SHA256,'pid':packet['pid'],'captured_at':time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+                result={'build_sha256':packet['build_sha256'],'verified':packet['verified'],'pid':packet['pid'],'captured_at':time.strftime('%Y-%m-%dT%H:%M:%S%z'),
                     'entity_sample_age_ms':round((time.perf_counter()-packet['entity_time'])*1000,2),'camera':asdict(packet['camera']),
                     'raw_entity_count':packet['count'],'sample_ms':packet['ms'],'entities':rows}
                 Path(path).write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
